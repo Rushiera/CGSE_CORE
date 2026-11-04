@@ -8,9 +8,24 @@ import java.util.*;
 
 /** Comparable test entries; main-counts is the integer stage, not GraphPlanner. */
 final class CountModelReplay {
-    record Result(BigInteger[] counts, boolean infeasible) {}
+    record Result(BigInteger[] counts, boolean infeasible, String refusal) {
+        Result(BigInteger[] counts, boolean infeasible) {
+            this(counts, infeasible, "");
+        }
+    }
     static final class Unsupported extends RuntimeException {
         Unsupported(String reason) { super(reason); }
+    }
+
+    /** Read the third state where the compiled engine has it; older baselines simply report none. */
+    private static String refusal(Object search) {
+        try {
+            return (String) search.getClass().getMethod("refusal").invoke(search);
+        } catch (NoSuchMethodException absent) {
+            return "";
+        } catch (ReflectiveOperationException failed) {
+            throw new IllegalStateException(failed);
+        }
     }
 
     static Result solve(String engine, List<ExactLinearProgram.Constraint> rows, BigInteger[] low,
@@ -49,7 +64,7 @@ final class CountModelReplay {
                     while (!search.step()) {}
                     if (!search.paused() || search.counts() != null || search.infeasible() ||
                             budget.remainingWork() < 1024 || before == budget.nodes())
-                        return new Result(search.counts(), search.infeasible());
+                        return new Result(search.counts(), search.infeasible(), refusal(search));
                     search.resume(Math.min(262144, budget.remainingWork()));
                 }
             }
@@ -83,7 +98,7 @@ final class CountModelReplay {
                         while (!search.step()) {}
                         if (search.counts() != null || search.infeasible() || !search.retained() ||
                                 budget.remainingWork() < 8192 || before == budget.nodes())
-                            return new Result(search.counts(), search.infeasible());
+                            return new Result(search.counts(), search.infeasible(), refusal(search));
                     } while (true);
                 }
             }
