@@ -44,8 +44,14 @@ final class CountHall implements AutoCloseable {
         int[] variables = null;
         int[] positions = null;
         try {
-            if (allowance < 4096 || lower.length > 8192 || rows.size() > 32768) complete = true;
-            else if (!direct) {
+            StringBuilder admission = new StringBuilder();
+            if (allowance < 4096) admission.append("quota:allowance<4096 ");
+            if (lower.length > 8192) admission.append("size:variables>8192 ");
+            if (rows.size() > 32768) admission.append("size:rows>32768 ");
+            if (admission.length() > 0) {
+                budget.note("admission_refused", "owner=CountHall " + admission.toString().trim());
+                complete = true;
+            } else if (!direct) {
                 // Indexing remains bounded by the ambient model; the matching
                 // and its quadratic pair workspace depend only on used terms.
                 long scratch = 4096L + 32L * lower.length + 32L * Math.min(2048, rows.size());
