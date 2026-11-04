@@ -46,7 +46,12 @@ final class CountHittingSet implements AutoCloseable {
         this.weights = weights.clone();
         this.budget = budget;
         allowance = Math.min(maximumWork, budget.remainingWork() / 16);
-        if (weights.length > 64 || input.size() > 128 || allowance < 256) {
+        StringBuilder admission = new StringBuilder();
+        if (weights.length > 64) admission.append("size:weights>64 ");
+        if (input.size() > 128) admission.append("size:input>128 ");
+        if (allowance < 256) admission.append("quota:allowance<256 ");
+        if (admission.length() > 0) {
+            budget.note("admission_refused", "owner=CountHittingSet " + admission.toString().trim());
             complete = true;
             return;
         }
