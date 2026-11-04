@@ -108,6 +108,7 @@ final class CountMeetInMiddle implements CountContinuation {
     private long memory, work, signatures, probes;
     private int phase, rowIndex, split, leftStates, rightStates, trials, rangeCursor = -1;
     private boolean complete, infeasible, equalities;
+    private String refusal = "";
 
     /** A cheap upper estimate for a bounded, weighted scalar-domain scout. */
     static long scoutWork(List<ExactLinearProgram.Constraint> rows, BigInteger[] lower,
@@ -278,8 +279,12 @@ final class CountMeetInMiddle implements CountContinuation {
         allowance = Math.min(maxWork, budget.remainingWork() / 3 * 2);
         long entries = original.stream().mapToLong(row -> row.terms().size()).sum();
         long bytes = 1024 + 192L * entries + 256L * original.size() + 256L * lower.length;
-        if (allowance < 1024 || !budget.tryReserve(bytes)) complete = true;
-        else memory = bytes;
+        boolean quotaExceeded = allowance < 1024;
+        if (quotaExceeded || !budget.tryReserve(bytes)) {
+            refusal = quotaExceeded ? "quota:allowance<1024" : "memory:tryReserve";
+            budget.note("admission_refused", "owner=CountMeetInMiddle " + refusal);
+            complete = true;
+        } else memory = bytes;
     }
 
     public boolean step() {
@@ -1133,6 +1138,8 @@ final class CountMeetInMiddle implements CountContinuation {
     public BigInteger[] counts() {
         return complete && counts != null ? counts.clone() : null;
     }
+
+    @Override public String refusal() { return refusal; }
 
     /** Setup is paid; bounded hash probes or original-row validation are live. */
     boolean probing() {
