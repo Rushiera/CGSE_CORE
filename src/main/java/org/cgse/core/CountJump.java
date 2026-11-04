@@ -704,7 +704,8 @@ final class CountJump implements AutoCloseable {
         return qr[1].signum() != 0 && a.signum() != b.signum() ? qr[0].subtract(BigInteger.ONE) : qr[0];
     }
 
-    private static double ratio(BigInteger a, BigInteger b) {
+    /** Bounded signed quotient for candidate ordering; shared with the demand projection's repair tie-break. */
+    static double ratio(BigInteger a, BigInteger b) {
         if (a.signum() == 0) return 0;
         int left = Math.max(0, a.abs().bitLength() - 52), right = Math.max(0, b.bitLength() - 52);
         double value = a.shiftRight(left).doubleValue() / b.shiftRight(right).doubleValue();
