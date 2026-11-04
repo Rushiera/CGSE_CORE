@@ -68,7 +68,14 @@ final class CountAffineLattice implements AutoCloseable {
         this.budget = budget;
         this.lowerFirst = lowerFirst;
         allowance = Math.min(maximumWork, Math.min(131_072, budget.remainingWork() / 32));
-        if (lower.length > 128 || rows.size() > 512 || allowance < 1024) complete = true;
+        StringBuilder admission = new StringBuilder();
+        if (lower.length > 128) admission.append("size:variables>128 ");
+        if (rows.size() > 512) admission.append("size:rows>512 ");
+        if (allowance < 1024) admission.append("quota:allowance<1024 ");
+        if (admission.length() > 0) {
+            budget.note("admission_refused", "owner=CountAffineLattice " + admission.toString().trim());
+            complete = true;
+        }
         for (int i = 0; i < lower.length; i++)
             if (upper[i] == null || lower[i].compareTo(upper[i]) > 0) complete = true;
     }
@@ -99,7 +106,10 @@ final class CountAffineLattice implements AutoCloseable {
                 } else {
                     // The larger ambient box is useful only when the exact
                     // intersections actually expose a small integer kernel.
-                    if (lower.length > 48 && basis.size() > 48) return complete = true;
+                    if (lower.length > 48 && basis.size() > 48) {
+                        budget.note("admission_refused", "owner=CountAffineLattice size:variables>48 basis>48");
+                        return complete = true;
+                    }
                     beginGram(2);
                 }
             } else if (phase == 2) {
@@ -263,6 +273,8 @@ final class CountAffineLattice implements AutoCloseable {
         // are an admission estimate, not a rank proof or an infeasibility test;
         // the actual kernel size is checked after their exact intersections.
         if (lower.length > 48 && (!exactWeighted || free - exactEquations > 48)) {
+            budget.note("admission_refused", "owner=CountAffineLattice size:variables>48 exactWeighted=" + exactWeighted
+                    + " free>48=" + (free - exactEquations > 48));
             complete = true;
             return;
         }
