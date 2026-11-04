@@ -27,7 +27,8 @@ final class CountDomainSearch implements CountContinuation {
     private BigInteger[] counts;
     private long memory, work;
     private boolean retaining, paused;
-    private boolean trial, complete, infeasible;
+    private boolean trial, complete, infeasible, faceInfeasible;
+    private String refusal = "";
 
     CountDomainSearch(List<ExactLinearProgram.Constraint> rows, BigInteger[] lower, BigInteger[] upper,
                       PlanningBudget budget, long allowance) {
@@ -44,7 +45,12 @@ final class CountDomainSearch implements CountContinuation {
         width = new int[lower.length];
         // Match the actual PB backend's sparse admission. A binary model must
         // not be rejected merely because the original variable count is 513.
-        if (lower.length > 1024 || rows.size() > 4096) {
+        StringBuilder admission = new StringBuilder();
+        if (lower.length > 1024) admission.append("size:variables>1024 ");
+        if (rows.size() > 4096) admission.append("size:rows>4096 ");
+        if (admission.length() > 0) {
+            refusal = admission.toString().trim();
+            budget.note("admission_refused", "owner=CountDomainSearch " + refusal);
             complete = true;
             return;
         }
@@ -56,6 +62,8 @@ final class CountDomainSearch implements CountContinuation {
                 lazy = new CountLcg(rows, lower, upper, budget, Math.min(65536, allowance));
                 return;
             } else if (span.signum() < 0) {
+                refusal = "shape:span<0";
+                budget.note("admission_refused", "owner=CountDomainSearch " + refusal);
                 complete = true;
                 return;
             } else width[i] = span.intValueExact();
@@ -72,6 +80,8 @@ final class CountDomainSearch implements CountContinuation {
         }
         long bytes = 2048 + 256L * variables + 192L * rows.size() + 128L * terms;
         if (!budget.tryReserve(bytes)) {
+            refusal = "memory:tryReserve";
+            budget.note("admission_refused", "owner=CountDomainSearch " + refusal);
             complete = true;
             return;
         }
@@ -148,7 +158,8 @@ final class CountDomainSearch implements CountContinuation {
         if (!search.step()) return false;
         if (retaining && search.paused()) return paused = true;
         var binary = search.counts();
-        infeasible = search.infeasible() && !trial;
+        faceInfeasible = search.infeasible();
+        infeasible = faceInfeasible && !trial;
         if (binary != null) {
             counts = lower.clone();
             for (int i = 0; i < lower.length; i++) for (int k = 0; k < width[i]; k++) {
@@ -215,7 +226,17 @@ final class CountDomainSearch implements CountContinuation {
         if (search != null) search.retained();
         return this;
     }
+    /** A trial face reports only its face verdict; infeasible() never exports it. */
+    CountDomainSearch trial(boolean value) {
+        trial = value;
+        return this;
+    }
+    /** The verdict under this face's rows (including any bound row), unmasked. */
+    boolean faceInfeasible() {
+        return faceInfeasible;
+    }
     public boolean paused() { return paused; }
+    @Override public String refusal() { return refusal; }
     public long work() { return work; }
     public long progress() { return lazy != null ? lazy.progress() : search != null ? search.progress() : 0; }
     public boolean matches(List<ExactLinearProgram.Constraint> rows, BigInteger[] low, BigInteger[] high) {
