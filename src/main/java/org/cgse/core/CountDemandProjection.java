@@ -457,8 +457,7 @@ final class CountDemandProjection implements AutoCloseable {
     private void repair(int row) {
         if (debts[row].signum() <= 0) return;
         if (++updates > 131072) throw new Limit();
-        int best = -1, bestDebts = Integer.MAX_VALUE; double bestWeight = Double.POSITIVE_INFINITY;
-        BigInteger runs = null;
+        Repair best = null;
         for (var source : original.get(row).terms().entrySet()) {
             hit(); int v = source.getKey(); if (source.getValue().signum() >= 0 || canonical[v] != v) continue;
             BigInteger extra = CheckedAmounts.ceilDiv(debts[row], source.getValue().negate()); int negative = 0; double weight = 0;
@@ -469,16 +468,82 @@ final class CountDemandProjection implements AutoCloseable {
                 for (var a : original.get(e.row()).terms().values()) { hit(); if (a.signum() < 0) gain = gain.max(a.negate()); }
                 weight += after.doubleValue() / gain.doubleValue();
             }
-            if (negative < bestDebts || negative == bestDebts && (weight < bestWeight || weight == bestWeight && (runs == null || extra.compareTo(runs) < 0))) {
-                best = v; runs = extra; bestDebts = negative; bestWeight = weight;
-            }
+            var candidate = new Repair(v, extra, negative, weight);
+            if (best == null || compareRepairs(candidate, best) < 0) best = candidate;
         }
-        if (best < 0) throw new Limit();
-        counts[best] = counts[best].add(runs); bounded(counts[best]);
-        for (var e : columns.get(best)) {
-            hit(); debts[e.row()] = debts[e.row()].add(e.coefficient().multiply(runs));
+        if (best == null) throw new Limit();
+        counts[best.variable()] = counts[best.variable()].add(best.runs()); bounded(counts[best.variable()]);
+        for (var e : columns.get(best.variable())) {
+            hit(); debts[e.row()] = debts[e.row()].add(e.coefficient().multiply(best.runs()));
             if (debts[e.row()].signum() > 0) enqueue(e.row());
         }
+    }
+
+    /** One repair move: fewer newly violated rows win, then the smaller residual weight. */
+    private record Repair(int variable, BigInteger runs, int negative, double weight) {}
+
+    /** Row, exact hinge and per-row gain of one repair candidate. */
+    static final class ResidualProfile {
+        private final int[] rows;
+        private final BigInteger[] hinges, gains;
+
+        ResidualProfile(int[] rows, BigInteger[] hinges, BigInteger[] gains) {
+            this.rows = rows; this.hinges = hinges; this.gains = gains;
+        }
+    }
+
+    private int compareRepairs(Repair left, Repair right) {
+        if (left.negative() != right.negative()) return left.negative() < right.negative() ? -1 : 1;
+        // The converted sum is only a fast ordering cue. Two residues above
+        // Double.MAX_VALUE both convert to Infinity, and Infinity/Infinity is
+        // NaN, which compares false against every bound and every candidate:
+        // such a pair used to be decided by iteration order alone. Finite and
+        // distinct sums keep their order; everything else goes to the exact
+        // residual, which subtracts each row's hinge before any conversion.
+        if (!Double.isNaN(left.weight()) && !Double.isNaN(right.weight()) && left.weight() != right.weight())
+            return left.weight() < right.weight() ? -1 : 1;
+        int order = compareResidualSums(residualProfile(left), residualProfile(right));
+        return order != 0 ? order : left.runs().compareTo(right.runs());
+    }
+
+    /** Exact hinges of one move; the merged comparison below is priced by these rows. */
+    private ResidualProfile residualProfile(Repair repair) {
+        var edges = columns.get(repair.variable());
+        var rows = new int[edges.size()]; var hinges = new BigInteger[edges.size()]; var gains = new BigInteger[edges.size()];
+        for (int i = 0; i < edges.size(); i++) {
+            hit(); var edge = edges.get(i); rows[i] = edge.row();
+            hinges[i] = debts[edge.row()].add(edge.coefficient().multiply(repair.runs())).max(BigInteger.ZERO);
+            gains[i] = repairGain(edge.row());
+        }
+        return new ResidualProfile(rows, hinges, gains);
+    }
+
+    private BigInteger repairGain(int row) {
+        BigInteger gain = BigInteger.ONE;
+        for (var a : original.get(row).terms().values()) { hit(); if (a.signum() < 0) gain = gain.max(a.negate()); }
+        return gain;
+    }
+
+    /** Sign of sum(hinge/gain) for two moves. Each row's hinge is subtracted
+     * exactly before any conversion, so two residues that both exceed
+     * Double.MAX_VALUE still separate; the bounded accumulated difference only
+     * orders candidates (same discipline as CountJump.compareMoves) and never
+     * feeds proof arithmetic or the published counts. */
+    static int compareResidualSums(ResidualProfile left, ResidualProfile right) {
+        double difference = 0;
+        int i = 0, j = 0;
+        while (i < left.rows.length || j < right.rows.length) {
+            int first = i < left.rows.length ? left.rows[i] : Integer.MAX_VALUE;
+            int second = j < right.rows.length ? right.rows[j] : Integer.MAX_VALUE;
+            int row = Math.min(first, second);
+            var gain = first == row ? left.gains[i] : right.gains[j];
+            var delta = (first == row ? left.hinges[i] : BigInteger.ZERO)
+                    .subtract(second == row ? right.hinges[j] : BigInteger.ZERO);
+            if (first == row) i++;
+            if (second == row) j++;
+            if (delta.signum() != 0) difference += CountJump.ratio(delta, gain);
+        }
+        return difference < 0 ? -1 : difference > 0 ? 1 : 0;
     }
 
     private void add(Map<Integer, ExactRational> target, Map<Integer, ExactRational> source, ExactRational factor) {
