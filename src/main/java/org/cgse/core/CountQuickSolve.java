@@ -316,10 +316,10 @@ final class CountQuickSolve implements AutoCloseable {
             phase++;
         }
         if (phase == 7) {
-            if (domainSearch == null) domainSearch = new CountDomainSearch(reduction.rows(), reduction.lower(), reduction.upper(), budget, 65536);
+            if (domainSearch == null) domainSearch = new CountDomainSearch(reduction.rows(), reduction.lower(), reduction.upper(), budget, 65536).trial(this.trial);
             if (!domainSearch.step()) return false;
             var value = domainSearch.counts();
-            boolean impossible = domainSearch.infeasible();
+            boolean impossible = domainSearch.faceInfeasible();
             if (!trial) memory += CountMapping.retain(learned, CountMapping.representatives(reduction.representatives()).conflicts(domainSearch.learnedConflicts(), budget), budget);
             domainSearch.close();
             domainSearch = null;
