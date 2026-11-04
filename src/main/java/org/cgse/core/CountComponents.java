@@ -48,8 +48,10 @@ final class CountComponents implements AutoCloseable {
         long entries = rows.stream().mapToLong(row -> row.terms().size()).sum();
         allowance = Math.min(524_288, budget.remainingWork() / 8);
         long bytes = 2048 + 768L * lower.length + 256L * rows.size() + 384L * entries;
-        if (allowance < 1024 || !budget.tryReserve(bytes)) complete = true;
-        else memory = bytes;
+        if (allowance < 1024 || !budget.tryReserve(bytes)) {
+            budget.note("admission_refused", "owner=CountComponents " + (allowance < 1024 ? "quota:allowance<1024" : "memory:tryReserve"));
+            complete = true;
+        } else memory = bytes;
     }
 
     boolean step() {
@@ -179,7 +181,7 @@ final class CountComponents implements AutoCloseable {
             return false;
         }
         complete = true;
-        if (unresolved) return true;
+        if (unresolved) { budget.note("admission_refused", "owner=CountComponents components_unresolved"); return true; }
         // A sum of contiguous integer intervals has no holes. Distribute every
         // aggregate within its original domains, then check ALL original rows.
         var lifted = lower.clone();
