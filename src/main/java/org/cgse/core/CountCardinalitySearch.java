@@ -64,7 +64,12 @@ final class CountCardinalitySearch implements AutoCloseable {
         this.upper = upper;
         this.budget = budget;
         allowance = Math.min(maximumWork, budget.remainingWork());
-        if (lower.length > 512 || rows.size() > 2048 || allowance < 1024) {
+        StringBuilder admission = new StringBuilder();
+        if (lower.length > 512) admission.append("size:variables>512 ");
+        if (rows.size() > 2048) admission.append("size:rows>2048 ");
+        if (allowance < 1024) admission.append("quota:allowance<1024 ");
+        if (admission.length() > 0) {
+            budget.note("admission_refused", "owner=CountCardinalitySearch " + admission.toString().trim());
             complete = true;
             return;
         }
