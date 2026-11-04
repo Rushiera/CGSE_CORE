@@ -25,7 +25,12 @@ final class CountHermite implements AutoCloseable {
         this.variables = variables;
         allowance = Math.min(65536, budget.remainingWork() / 64);
         known = new HashSet<>(rows);
-        if (variables > 96 || rows.size() > 1024 || allowance < 4096) {
+        StringBuilder admission = new StringBuilder();
+        if (variables > 96) admission.append("size:variables>96 ");
+        if (rows.size() > 1024) admission.append("size:rows>1024 ");
+        if (allowance < 4096) admission.append("quota:allowance<4096 ");
+        if (admission.length() > 0) {
+            budget.note("admission_refused", "owner=CountHermite " + admission.toString().trim());
             complete = true;
             return;
         }
