@@ -45,7 +45,9 @@ final class CountKernelSearch implements AutoCloseable {
         started = budget.threadWork();
         int n = lower.length, d = basis.size();
         long bytes = 4096L + 2048L * n * d + 256L * (rows.size() + 2L * n) * (d + 1L);
-        if (d < 2 || d >= n || d > 48 || n > 128 || rows.size() > 512 || allowance < 2048 || !budget.tryReserve(bytes)) {
+        String admission = (d < 2 ? "shape:basis<2 " : "") + (d >= n ? "shape:basis>=variables " : "") + (d > 48 ? "size:basis>48 " : "") + (n > 128 ? "size:variables>128 " : "") + (rows.size() > 512 ? "size:rows>512 " : "") + (allowance < 2048 ? "quota:allowance<2048" : "");
+        if (!admission.isEmpty() || !budget.tryReserve(bytes)) {
+            budget.note("admission_refused", "owner=CountKernelSearch " + (admission.isEmpty() ? "memory:tryReserve" : admission.trim()));
             complete = true;
             return;
         }
@@ -208,7 +210,7 @@ final class CountKernelSearch implements AutoCloseable {
                     integerCost(values[j], basis.get(j)[i]);
                     restored[i] = restored[i].add(values[j].multiply(basis.get(j)[i]));
                 }
-                if (restored[i].compareTo(lower[i]) < 0 || restored[i].compareTo(upper[i]) > 0) return complete = true;
+                if (restored[i].compareTo(lower[i]) < 0 || restored[i].compareTo(upper[i]) > 0) { budget.note("admission_refused", "owner=CountKernelSearch restore_out_of_domain"); return complete = true; }
                 if (coordinate == restored.length) { phase = 5; row = 0; }
                 return false;
             }
@@ -220,7 +222,7 @@ final class CountKernelSearch implements AutoCloseable {
                     integerCost(term.getValue(), restored[term.getKey()]);
                     sum = sum.add(term.getValue().multiply(restored[term.getKey()]));
                 }
-                if (sum.compareTo(constraint.upper()) > 0) return complete = true;
+                if (sum.compareTo(constraint.upper()) > 0) { budget.note("admission_refused", "owner=CountKernelSearch restore_row_violation"); return complete = true; }
                 return false;
             }
             counts = restored;
