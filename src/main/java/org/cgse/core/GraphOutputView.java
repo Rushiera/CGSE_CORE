@@ -66,7 +66,14 @@ final class GraphOutputView<K> implements AutoCloseable {
         this.budget = budget;
         this.started = started;
         allowance = Math.min(262144, budget.remainingWork() / 16);
-        if (allowance < 8192 || compiler.catalog().size() > 8192) { complete = true; return; }
+        StringBuilder admission = new StringBuilder();
+        if (allowance < 8192) admission.append("quota:allowance<8192 ");
+        if (compiler.catalog().size() > 8192) admission.append("size:catalog>8192 ");
+        if (admission.length() > 0) {
+            budget.note("admission_refused", "owner=GraphOutputView " + admission.toString().trim());
+            complete = true;
+            return;
+        }
         long before = budget.threadSearchWork();
         try {
             if (!eligible(graph, budget)) { complete = true; return; }
