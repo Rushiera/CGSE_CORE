@@ -49,7 +49,12 @@ final class CountCoverCuts implements AutoCloseable {
         this.point = point;
         this.budget = budget;
         allowance = Math.min(32768, budget.remainingWork() / 32);
-        if (lower.length > 512 || rows.size() > 1024 || allowance < 1024) {
+        StringBuilder admission = new StringBuilder();
+        if (lower.length > 512) admission.append("size:variables>512 ");
+        if (rows.size() > 1024) admission.append("size:rows>1024 ");
+        if (allowance < 1024) admission.append("quota:allowance<1024 ");
+        if (admission.length() > 0) {
+            budget.note("admission_refused", "owner=CountCoverCuts " + admission.toString().trim());
             fair = false;
             complete = true;
             return;
