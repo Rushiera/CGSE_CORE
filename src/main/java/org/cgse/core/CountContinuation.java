@@ -15,6 +15,12 @@ interface CountContinuation extends AutoCloseable {
     boolean matches(List<ExactLinearProgram.Constraint> rows, BigInteger[] lower, BigInteger[] upper);
     long work();
     default long progress() { return 0; }
+    /**
+     * Admission refusal reason, empty when this frontier was admitted. A
+     * refused frontier finishes without work, so the owner would otherwise see
+     * the same shape as an exhausted or converged one.
+     */
+    default String refusal() { return ""; }
     @Override void close();
 
     /** Never replenish the request budget, and never overflow a cumulative local deadline. */
