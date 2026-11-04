@@ -32,7 +32,12 @@ final class CountPacking implements AutoCloseable {
         this.lower = lower;
         this.upper = upper;
         allowance = Math.min(2_000_000, budget.remainingWork() / 6);
-        if (lower.length > 256 || rows.size() > 1024 || allowance < 4096) {
+        StringBuilder admission = new StringBuilder();
+        if (lower.length > 256) admission.append("size:variables>256 ");
+        if (rows.size() > 1024) admission.append("size:rows>1024 ");
+        if (allowance < 4096) admission.append("quota:allowance<4096 ");
+        if (admission.length() > 0) {
+            budget.note("admission_refused", "owner=CountPacking " + admission.toString().trim());
             complete = true;
             return;
         }
