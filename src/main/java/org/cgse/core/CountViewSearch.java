@@ -52,6 +52,18 @@ final class CountViewSearch implements AutoCloseable {
         commonWork = work > Long.MAX_VALUE - commonWork ? Long.MAX_VALUE : commonWork + work;
     }
 
+    /** Admission refusals reported by specialist arms, in engine order; empty when none refused. */
+    public String refusal() {
+        StringBuilder out = new StringBuilder();
+        for (Search search : searches) {
+            String reason = search.refusal;
+            if (reason.isEmpty() || out.indexOf(reason) >= 0) continue;
+            if (out.length() > 0) out.append(" ; ");
+            out.append(search.engine.name().toLowerCase(Locale.ROOT)).append(':').append(reason);
+        }
+        return out.toString();
+    }
+
     record CandidateOrigin(long id, String view, String engine) {}
 
     enum CandidateOutcome {
@@ -86,6 +98,7 @@ final class CountViewSearch implements AutoCloseable {
         int importedCuts, publishedCuts;
         CountModelViews.Domains scope;
         boolean done, batchPending, integerJump;
+        String refusal = "";
 
         Search(CountModelViews.View view, CountPortfolioPolicy.Arm scheduling, Engine engine) {
             this.view = view;
@@ -168,7 +181,13 @@ final class CountViewSearch implements AutoCloseable {
 
         boolean step() {
             if (proposal != null) return true;
-            if (specialist != null) return specialist.step();
+            if (specialist != null) {
+                boolean done = specialist.step();
+                // A refused frontier finishes without work; keep the reason so
+                // the owner can tell it apart from an exhausted or converged arm.
+                if (refusal.isEmpty()) refusal = specialist.refusal();
+                return done;
+            }
             return cdcl != null ? cdcl.step() : jump != null ? jump.step() : solver.step();
         }
 
