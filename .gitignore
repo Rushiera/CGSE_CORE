@@ -1,6 +1,7 @@
 .local/
 /history/
 /docs/reference/
+/runtime/
 .gradle/
 **/build/
 **/out/
