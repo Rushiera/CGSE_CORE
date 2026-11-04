@@ -17,7 +17,7 @@ public final class CountModelRegression {
         if (!Set.of("lcg-first", "lcg-retained", "lp-retained", "integer-lp-retained", "pb-retained", "affine-retained", "mitm-retained", "views", "main-counts").contains(engine))
             throw new IllegalArgumentException("Unknown model engine: " + engine);
         System.out.println("ENGINE " + engine + " milliseconds=" + args[1] + " work=" + args[2] + " memory_bytes=" + (256L << 20));
-        int solved = 0, unresolved = 0, unsupported = 0, failed = 0;
+        int solved = 0, unresolved = 0, refused = 0, unsupported = 0, failed = 0;
         try (var input = new DataInputStream(new BufferedInputStream(Files.newInputStream(Path.of(args[0]))))) {
             for (int left = input.readInt(); left > 0; left--) {
                 String id = GraphFixtureRegression.string(input), expected = GraphFixtureRegression.string(input);
@@ -49,7 +49,9 @@ public final class CountModelRegression {
                     }
                     if (expected.equals("SAT") && infeasible || expected.equals("UNSAT") && witness != null)
                         throw new AssertionError("Contradicted external oracle " + expected);
-                    if (witness == null && !infeasible) { unresolved++; System.out.println(id + "\tUNRESOLVED\twork=" + budget.nodes()); }
+                    if (witness == null && !infeasible && !result.refusal().isEmpty()) {
+                        refused++; System.out.println(id + "\tREFUSED\t" + result.refusal() + "\twork=" + budget.nodes());
+                    } else if (witness == null && !infeasible) { unresolved++; System.out.println(id + "\tUNRESOLVED\twork=" + budget.nodes()); }
                     else { solved++; System.out.println(id + "\tPASS\t" + (witness != null ? "SAT" : "UNSAT") + "\twork=" + budget.nodes()); }
                 } catch (PlanningBudget.Exhausted limit) {
                     unresolved++; System.out.println(id + "\tUNRESOLVED\twork=" + budget.nodes() + "\t" + limit);
@@ -64,8 +66,8 @@ public final class CountModelRegression {
             }
             if (input.read() != -1) throw new AssertionError("Trailing count-model bytes");
         }
-        System.out.println("SUMMARY solved=" + solved + " unresolved=" + unresolved + " unsupported=" + unsupported + " failed=" + failed);
+        System.out.println("SUMMARY solved=" + solved + " unresolved=" + unresolved + " refused=" + refused + " unsupported=" + unsupported + " failed=" + failed);
         if (failed != 0) System.exit(1);
-        if (unresolved != 0 || unsupported != 0) System.exit(2);
+        if (unresolved != 0 || refused != 0 || unsupported != 0) System.exit(2);
     }
 }
