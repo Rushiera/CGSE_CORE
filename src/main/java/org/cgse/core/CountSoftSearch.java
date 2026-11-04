@@ -49,12 +49,19 @@ final class CountSoftSearch implements AutoCloseable {
         allowance = Math.min(maximumWork, budget.remainingWork() / 16);
         low = Arrays.copyOf(lower, lower.length + soft.size());
         high = Arrays.copyOf(upper, upper.length + soft.size());
-        if (low.length > 512 || soft.size() > 128 || hard.size() > 1024 || allowance < 2048) {
+        StringBuilder admission = new StringBuilder();
+        if (low.length > 512) admission.append("size:variables>512 ");
+        if (soft.size() > 128) admission.append("size:soft>128 ");
+        if (hard.size() > 1024) admission.append("size:hard>1024 ");
+        if (allowance < 2048) admission.append("quota:allowance<2048 ");
+        if (admission.length() > 0) {
+            budget.note("admission_refused", "owner=CountSoftSearch " + admission.toString().trim());
             complete = true;
             return;
         }
         long bytes = 4096L + 512L * low.length + 256L * soft.stream().mapToLong(s -> s.condition().terms().size()).sum();
         if (!budget.tryReserve(bytes)) {
+            budget.note("admission_refused", "owner=CountSoftSearch memory:tryReserve");
             complete = true;
             return;
         }
@@ -68,6 +75,7 @@ final class CountSoftSearch implements AutoCloseable {
                     budget.check();
                     BigInteger endpoint = term.getValue().signum() > 0 ? upper[term.getKey()] : lower[term.getKey()];
                     if (endpoint == null) {
+                        budget.note("admission_refused", "owner=CountSoftSearch shape:endpoint==null");
                         complete = true;
                         return;
                     }
@@ -133,12 +141,12 @@ final class CountSoftSearch implements AutoCloseable {
                 trial = best == null ? upper : lower.add(upper).subtract(BigInteger.ONE).shiftRight(1);
                 var rows = new ArrayList<>(encoded);
                 rows.add(new ExactLinearProgram.Constraint(objective, trial));
-                search = new CountDomainSearch(rows, low, high, budget, Math.min(32768, allowance - work));
+                search = new CountDomainSearch(rows, low, high, budget, Math.min(32768, allowance - work)).trial(best != null);
                 probes++;
             }
             if (!search.step()) return false;
             var candidate = search.counts();
-            boolean closed = search.infeasible();
+            boolean closed = search.faceInfeasible();
             search.close();
             search = null;
             if (candidate != null) {
