@@ -40,7 +40,13 @@ final class CountSymmetry implements AutoCloseable {
         this.high = high;
         this.budget = budget;
         this.allowance = Math.min(allowance, budget.remainingWork() / 8);
-        if (low.length > 192 || rows.size() > 1024 || low.length < 2 || this.allowance < 4096) {
+        StringBuilder admission = new StringBuilder();
+        if (low.length > 192) admission.append("size:variables>192 ");
+        if (rows.size() > 1024) admission.append("size:rows>1024 ");
+        if (low.length < 2) admission.append("shape:variables<2 ");
+        if (this.allowance < 4096) admission.append("quota:allowance<4096 ");
+        if (admission.length() > 0) {
+            budget.note("admission_refused", "owner=CountSymmetry " + admission.toString().trim());
             complete = true;
             return;
         }
