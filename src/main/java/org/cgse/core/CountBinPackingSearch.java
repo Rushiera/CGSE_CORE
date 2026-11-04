@@ -41,12 +41,18 @@ final class CountBinPackingSearch implements AutoCloseable {
         this.upper = upper;
         this.budget = budget;
         allowance = Math.min(maximumWork, budget.remainingWork());
-        if (lower.length > 512 || rows.size() > 1024 || allowance < 1024) {
+        StringBuilder admission = new StringBuilder();
+        if (lower.length > 512) admission.append("size:variables>512 ");
+        if (rows.size() > 1024) admission.append("size:rows>1024 ");
+        if (allowance < 1024) admission.append("quota:allowance<1024 ");
+        if (admission.length() > 0) {
+            budget.note("admission_refused", "owner=CountBinPackingSearch " + admission.toString().trim());
             complete = true;
             return;
         }
         long entries = rows.stream().mapToLong(row -> row.terms().size()).sum();
         if (entries > 32768) {
+            budget.note("admission_refused", "owner=CountBinPackingSearch size:entries>32768");
             complete = true;
             return;
         }
