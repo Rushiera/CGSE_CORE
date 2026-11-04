@@ -63,7 +63,12 @@ final class CountBranchProbe implements AutoCloseable {
         this.budget = budget;
         chosen = fallback;
         allowance = Math.min(32768, budget.remainingWork() / 32);
-        if (lower.length > 128 || rows.size() > 512 || allowance < 4096) {
+        StringBuilder admission = new StringBuilder();
+        if (lower.length > 128) admission.append("size:variables>128 ");
+        if (rows.size() > 512) admission.append("size:rows>512 ");
+        if (allowance < 4096) admission.append("quota:allowance<4096 ");
+        if (admission.length() > 0) {
+            budget.note("admission_refused", "owner=CountBranchProbe " + admission.toString().trim());
             complete = true;
             return;
         }
