@@ -175,7 +175,10 @@ final class CountChainSchedule<K> implements AutoCloseable {
                 witness = new PlanStep.Sequence(program);
                 budget.note("count_chain_schedule", "exact_repetitions; words=" + program.size() + "; calls=" + calls.size());
                 complete = true;
-            } else if (!progress || ++rounds == 32) complete = true;
+            } else if (!progress || ++rounds == 32) {
+                budget.note("admission_refused", "owner=CountChainSchedule rounds=" + rounds + " progress=" + progress);
+                complete = true;
+            }
             else { cursor = 0; progress = false; }
             if (entriesOnly && complete && !program.isEmpty()) witness = new PlanStep.Sequence(program);
             return;
@@ -220,7 +223,7 @@ final class CountChainSchedule<K> implements AutoCloseable {
     }
 
     private boolean reserve(long bytes) {
-        if (!budget.tryReserve(bytes)) { complete = true; return false; }
+        if (!budget.tryReserve(bytes)) { budget.note("admission_refused", "owner=CountChainSchedule memory:tryReserve"); complete = true; return false; }
         memory += bytes;
         return true;
     }
