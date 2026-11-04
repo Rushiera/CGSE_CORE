@@ -207,7 +207,12 @@ final class CountPackingLpSearch implements AutoCloseable {
         if (depth < 0) { complete = true; return true; }
         var frame = frames[depth];
         if (!initialized) {
-            if (++frame.iterations > 8192) { refusals++; complete = true; return true; }
+            if (++frame.iterations > 8192) {
+                budget.note("admission_refused", "owner=CountPackingLpSearch iterations>8192");
+                refusals++;
+                complete = true;
+                return true;
+            }
             int state = primal(frame);
             if (state < 0) { refusals++; complete = true; return true; }
             if (state == 0) return false;
