@@ -35,7 +35,12 @@ final class CountProbing implements AutoCloseable {
         this.upper = upper.clone();
         base = new ArrayList<>(rows);
         allowance = Math.min(131_072, budget.remainingWork() / 16);
-        if (lower.length > 128 || rows.size() > 512 || allowance < 8192) {
+        StringBuilder admission = new StringBuilder();
+        if (lower.length > 128) admission.append("size:variables>128 ");
+        if (rows.size() > 512) admission.append("size:rows>512 ");
+        if (allowance < 8192) admission.append("quota:allowance<8192 ");
+        if (admission.length() > 0) {
+            budget.note("admission_refused", "owner=CountProbing " + admission.toString().trim());
             complete = true;
             return;
         }
