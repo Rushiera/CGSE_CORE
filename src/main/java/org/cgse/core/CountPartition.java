@@ -46,7 +46,11 @@ final class CountPartition implements AutoCloseable {
         Arrays.fill(partners, -1);
         Arrays.fill(groups, -1);
         allowance = Math.min(524_288L, budget.remainingWork() / 8);
-        if (!binaryChoices(lower, upper, 1) || allowance < 1024) {
+        StringBuilder admission = new StringBuilder();
+        if (!binaryChoices(lower, upper, 1)) admission.append("shape:not_binary ");
+        if (allowance < 1024) admission.append("quota:allowance<1024 ");
+        if (admission.length() > 0) {
+            budget.note("admission_refused", "owner=CountPartition " + admission.toString().trim());
             complete = true;
             return;
         }
