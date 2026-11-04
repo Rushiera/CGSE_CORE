@@ -26,7 +26,12 @@ final class CountCongruence implements AutoCloseable {
         this.budget = budget;
         this.variables = variables;
         allowance = Math.min(262_144, budget.remainingWork() / 32);
-        if (variables > 16384 || rows.size() > 1024 || allowance < 1024) {
+        StringBuilder admission = new StringBuilder();
+        if (variables > 16384) admission.append("size:variables>16384 ");
+        if (rows.size() > 1024) admission.append("size:rows>1024 ");
+        if (allowance < 1024) admission.append("quota:allowance<1024 ");
+        if (admission.length() > 0) {
+            budget.note("admission_refused", "owner=CountCongruence " + admission.toString().trim());
             complete = true;
             return;
         }
