@@ -25,7 +25,12 @@ final class CountObbt implements AutoCloseable {
         this.upper = upper;
         this.budget = budget;
         allowance = Math.min(65536, budget.remainingWork() / 32);
-        if (lower.length > 64 || rows.size() > 256 || allowance < 4096) {
+        StringBuilder admission = new StringBuilder();
+        if (lower.length > 64) admission.append("size:variables>64 ");
+        if (rows.size() > 256) admission.append("size:rows>256 ");
+        if (allowance < 4096) admission.append("quota:allowance<4096 ");
+        if (admission.length() > 0) {
+            budget.note("admission_refused", "owner=CountObbt " + admission.toString().trim());
             complete = true;
             return;
         }
