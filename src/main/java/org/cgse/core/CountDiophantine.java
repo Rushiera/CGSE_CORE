@@ -18,6 +18,7 @@ final class CountDiophantine implements CountContinuation {
     private int x, y, z = -1;
     private long work, memory;
     private boolean complete, retaining, paused, prepared;
+    private String refusal = "";
     private CountDiophantine face;
     private BigInteger[] faceBase;
     private int[] faceChoices;
@@ -38,24 +39,39 @@ final class CountDiophantine implements CountContinuation {
         this.upper = upper;
         this.budget = budget;
         allowance = Math.min(maximumWork, Math.min(131_072, budget.remainingWork() / 32));
-        if (lower.length > 256 || rows.size() > 512 || allowance < 256) {
+        StringBuilder admission = new StringBuilder();
+        if (lower.length > 256) admission.append("size:variables>256 ");
+        if (rows.size() > 512) admission.append("size:rows>512 ");
+        if (allowance < 256) admission.append("quota:allowance<256 ");
+        if (admission.length() > 0) {
+            refusal = admission.toString().trim();
+            budget.note("admission_refused", "owner=CountDiophantine " + refusal);
             complete = true;
             return;
         }
         var free = new ArrayList<Integer>();
         for (int i = 0; i < lower.length; i++) {
             if (upper[i] == null || lower[i].compareTo(upper[i]) > 0) {
+                refusal = upper[i] == null ? "shape:upper==null" : "shape:lower>upper";
+                budget.note("admission_refused", "owner=CountDiophantine " + refusal);
                 complete = true;
                 return;
             }
             if (!lower[i].equals(upper[i])) free.add(i);
         }
         if (free.size() < 2) {
+            refusal = "shape:free<2";
+            budget.note("admission_refused", "owner=CountDiophantine " + refusal);
             complete = true;
             return;
         }
         long bytes = 4096L + 256L * lower.length + 64L * rows.size();
-        if (!budget.tryReserve(bytes)) { complete = true; return; }
+        if (!budget.tryReserve(bytes)) {
+            refusal = "memory:tryReserve";
+            budget.note("admission_refused", "owner=CountDiophantine " + refusal);
+            complete = true;
+            return;
+        }
         memory = bytes;
         freeVariables = free;
     }
@@ -235,21 +251,33 @@ final class CountDiophantine implements CountContinuation {
 
     private void prepareFaces(ExactLinearProgram.Constraint equation, List<Integer> free) {
         Map<Integer, BigInteger> shape = shape(equation);
+        int index = 0;
         for (var row : rows) {
             if (!retaining && work >= allowance) {
                 complete = true;
                 return;
             }
             var other = shape(row);
+            index++;
             // This candidate is for a single weighted allocation. Coupled
             // independent balances belong to the other quantity strategies.
             if (other.size() > 1 && !shape.equals(other)) {
+                refusal = "shape:faces_not_equal";
+                budget.note("admission_refused", "owner=CountDiophantine " + refusal);
+                // The refusal is a shape conflict, not a capacity limit: the
+                // candidate face covers one weighted allocation only. Report
+                // where the first conflicting row sits on both sides.
+                budget.note("count_diophantine", "multi_shape_conflict; row=" + index
+                        + "/" + rows.size() + "; equation_vars=" + shape.size()
+                        + "; row_vars=" + other.size());
                 complete = true;
                 return;
             }
         }
         faceChoices = free.stream().filter(id -> equation.terms().containsKey(id)).mapToInt(Integer::intValue).toArray();
         if (faceChoices.length < 2) {
+            refusal = "shape:faceChoices<2";
+            budget.note("admission_refused", "owner=CountDiophantine " + refusal);
             complete = true;
             return;
         }
@@ -262,6 +290,8 @@ final class CountDiophantine implements CountContinuation {
             remaining = remaining.subtract(term.getValue().multiply(faceBase[id]));
         }
         if (remaining.signum() < 0) {
+            refusal = "shape:remaining<0";
+            budget.note("admission_refused", "owner=CountDiophantine " + refusal);
             complete = true;
             return;
         }
@@ -302,6 +332,8 @@ final class CountDiophantine implements CountContinuation {
 
     private boolean stepFaces(long started) {
         if (faceAttempt >= Math.min(16, faceChoices.length)) {
+            refusal = "faces_unresolved";
+            budget.note("admission_refused", "owner=CountDiophantine " + refusal);
             complete = true;
             budget.note("count_diophantine", "faces_unresolved; work=" + work + "; original_domain_retained");
             return true;
@@ -354,6 +386,7 @@ final class CountDiophantine implements CountContinuation {
 
     CountDiophantine retained() { retaining = true; return this; }
     @Override public boolean paused() { return paused; }
+    @Override public String refusal() { return refusal; }
     @Override public long work() { return work; }
     boolean hasCoupledElimination() { return affine != null && affine.hasCoupledElimination(); }
     @Override public long progress() {
