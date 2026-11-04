@@ -47,6 +47,7 @@ final class CountBoolean implements CountContinuation {
     private long memory, work;
     private int rowIndex, level, decisions, conflicts, pinned;
     private boolean complete, infeasible;
+    private String refusal = "";
     private BigInteger[] counts;
     private final List<CountConflict> learned = new ArrayList<>();
     private final List<CountConflict> proofSteps = new ArrayList<>();
@@ -88,13 +89,21 @@ final class CountBoolean implements CountContinuation {
         negativeActivity = new double[lower.length];
         Arrays.fill(values, -1);
         allowance = Math.min(262_144, budget.remainingWork() / 8);
-        if (lower.length > 1024 || !CountPartition.binaryChoices(lower, upper, 1) || allowance < 1024) {
+        StringBuilder admission = new StringBuilder();
+        if (lower.length > 1024) admission.append("size:variables>1024 ");
+        if (!CountPartition.binaryChoices(lower, upper, 1)) admission.append("shape:not_binary ");
+        if (allowance < 1024) admission.append("quota:allowance<1024 ");
+        if (admission.length() > 0) {
+            refusal = admission.toString().trim();
+            budget.note("admission_refused", "owner=CountBoolean " + refusal);
             complete = true;
             return;
         }
         long entries = constraints.stream().mapToLong(row -> row.terms().size()).sum();
         long bytes = 1024 + 128L * entries + 192L * constraints.size() + 256L * lower.length;
         if (!budget.tryReserve(bytes)) {
+            refusal = "memory:tryReserve";
+            budget.note("admission_refused", "owner=CountBoolean " + refusal);
             complete = true;
             return;
         }
@@ -406,6 +415,7 @@ final class CountBoolean implements CountContinuation {
 
     CountBoolean retained() { retaining = true; return this; }
     public boolean paused() { return paused; }
+    @Override public String refusal() { return refusal; }
     public long work() { return work; }
     public long progress() { return conflicts; }
     public boolean matches(List<ExactLinearProgram.Constraint> rows, BigInteger[] low, BigInteger[] high) {
