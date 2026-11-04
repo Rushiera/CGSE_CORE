@@ -31,11 +31,22 @@ final class CountRangedKernel implements AutoCloseable {
         this.low = low;
         this.high = high;
         this.budget = budget;
-        if (low.length != 2 || rows.size() > 768) { complete = true; return; }
+        StringBuilder admission = new StringBuilder();
+        if (low.length != 2) admission.append("shape:variables!=2 ");
+        if (rows.size() > 768) admission.append("size:rows>768 ");
+        if (admission.length() > 0) {
+            budget.note("admission_refused", "owner=CountRangedKernel " + admission.toString().trim());
+            complete = true;
+            return;
+        }
         for (int i = 0; i < 2; i++) if (high[i] == null || low[i].compareTo(high[i]) > 0 ||
-                Math.max(low[i].bitLength(), high[i].bitLength()) > 512) { complete = true; return; }
+                Math.max(low[i].bitLength(), high[i].bitLength()) > 512) {
+            budget.note("admission_refused", "owner=CountRangedKernel shape:domain_invalid_or_wide coordinate=" + i);
+            complete = true;
+            return;
+        }
         long bytes = 4096L + 1024L * rows.size();
-        if (!budget.tryReserve(bytes)) complete = true;
+        if (!budget.tryReserve(bytes)) { budget.note("admission_refused", "owner=CountRangedKernel memory:tryReserve"); complete = true; }
         else memory = bytes;
     }
 
@@ -49,8 +60,10 @@ final class CountRangedKernel implements AutoCloseable {
                 BigInteger a = row.terms().getOrDefault(0, BigInteger.ZERO);
                 BigInteger b = row.terms().getOrDefault(1, BigInteger.ZERO);
                 if (row.terms().keySet().stream().anyMatch(id -> id < 0 || id >= 2) ||
-                        Math.max(Math.max(a.bitLength(), b.bitLength()), row.upper().bitLength()) > 512)
+                        Math.max(Math.max(a.bitLength(), b.bitLength()), row.upper().bitLength()) > 512) {
+                    budget.note("admission_refused", "owner=CountRangedKernel shape:row_outside_binary_or_wide");
                     return complete = true;
+                }
                 integerCost(a, b);
                 BigInteger gcd = a.gcd(b);
                 if (gcd.signum() == 0) return row.upper().signum() < 0 ? complete = true : false;
