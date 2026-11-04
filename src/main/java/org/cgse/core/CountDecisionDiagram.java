@@ -32,6 +32,7 @@ final class CountDecisionDiagram implements CountContinuation {
     private long memory, work;
     private BigInteger[] counts;
     private boolean complete, infeasible;
+    private String refusal = "";
 
     CountDecisionDiagram(List<ExactLinearProgram.Constraint> rows, BigInteger[] lower, BigInteger[] upper, PlanningBudget budget, long maximumWork) {
         this.rows = rows;
@@ -41,18 +42,29 @@ final class CountDecisionDiagram implements CountContinuation {
         retentionLimit = budget.availableBytes() / 8;
         allowance = Math.min(maximumWork, budget.remainingWork() / 16);
         int n = lower.length, m = rows.size();
-        if (n > 128 || m > 512 || allowance < 2048 || (long) n * m > 32768) {
+        StringBuilder admission = new StringBuilder();
+        if (n > 128) admission.append("size:variables>128 ");
+        if (m > 512) admission.append("size:rows>512 ");
+        if (allowance < 2048) admission.append("quota:allowance<2048 ");
+        if ((long) n * m > 32768) admission.append("size:variables*rows>32768 ");
+        if (admission.length() > 0) {
+            refusal = admission.toString().trim();
+            budget.note("admission_refused", "owner=CountDecisionDiagram " + refusal);
             complete = true;
             return;
         }
         widths = new int[n];
         for (int i = 0; i < n; i++) {
             if (upper[i] == null) {
+                refusal = "shape:upper==null";
+                budget.note("admission_refused", "owner=CountDecisionDiagram " + refusal);
                 complete = true;
                 return;
             }
             BigInteger width = upper[i].subtract(lower[i]);
             if (width.signum() < 0 || width.compareTo(BigInteger.valueOf(64)) > 0) {
+                refusal = width.signum() < 0 ? "shape:width<0" : "size:width>64";
+                budget.note("admission_refused", "owner=CountDecisionDiagram " + refusal);
                 complete = true;
                 return;
             }
@@ -60,12 +72,16 @@ final class CountDecisionDiagram implements CountContinuation {
         }
         // Wide domains on many coordinates tend to have distinct residuals:
         // leave the compact arithmetic representation its search budget.
-        if (n > 12 && Arrays.stream(widths).anyMatch(w -> w > 8)) {
+        if (n > 12 && Arrays.stream(widths).anyMatch(w -> w > 16)) {
+            refusal = "shape:domain_width>16_with_variables>12";
+            budget.note("admission_refused", "owner=CountDecisionDiagram " + refusal);
             complete = true;
             return;
         }
         long bytes = 2048L + 256L * (n + 1) * m;
         if (!budget.tryReserve(bytes)) {
+            refusal = "memory:tryReserve";
+            budget.note("admission_refused", "owner=CountDecisionDiagram " + refusal);
             complete = true;
             return;
         }
@@ -248,6 +264,7 @@ final class CountDecisionDiagram implements CountContinuation {
 
     CountDecisionDiagram retained() { retaining = true; return this; }
     public boolean paused() { return paused; }
+    @Override public String refusal() { return refusal; }
     public long work() { return work; }
     // Growing a frontier is paid work, not evidence that a witness is nearer.
     // Reward completed layers rather than exponential state accumulation.
