@@ -155,7 +155,13 @@ final class CountCdcl implements AutoCloseable {
         Arrays.fill(values, -1);
         Arrays.fill(phase, -1);
         long terms = rows.stream().mapToLong(r -> r.terms().size()).sum();
-        if (lower.length > 1024 || rows.size() > 4096 || terms > 65536 || allowance < 1024) {
+        StringBuilder admission = new StringBuilder();
+        if (lower.length > 1024) admission.append("size:variables>1024 ");
+        if (rows.size() > 4096) admission.append("size:rows>4096 ");
+        if (terms > 65536) admission.append("size:terms>65536 ");
+        if (allowance < 1024) admission.append("quota:allowance<1024 ");
+        if (admission.length() > 0) {
+            budget.note("admission_refused", "owner=CountCdcl " + admission.toString().trim());
             complete = true;
             return;
         }
