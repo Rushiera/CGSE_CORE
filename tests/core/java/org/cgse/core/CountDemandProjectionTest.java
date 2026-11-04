@@ -59,6 +59,7 @@ public final class CountDemandProjectionTest {
         exactCapacityRestoration();
         wideNumericAdmission();
         pivotStockBoundary();
+        repairTieBreak();
         cancellation();
         System.out.println("CountDemandProjectionTest PASS: checks=" + checks);
     }
@@ -200,6 +201,68 @@ public final class CountDemandProjectionTest {
             check(projection.result() == null, "Cancelled repivot published incomplete counts");
         }
         check(budget.reservedBytes() == 0, "Cancelled repivot retained workspace");
+    }
+
+    private static void repairTieBreak() {
+        // Repair used to order candidate moves by sum(after.doubleValue() / gain.doubleValue()).
+        // With AE-scale long counts both operands can exceed Double.MAX_VALUE, so
+        // every term becomes Infinity/Infinity = NaN and the sum compares false
+        // against every bound: the first candidate visited won. These two moves
+        // reproduce that shape exactly - their converted weight is NaN in both
+        // directions - and must now be ordered by their exact residual.
+        var huge = BigInteger.ONE.shiftLeft(1024).subtract(BigInteger.ONE);
+        var longResidual = BigInteger.ONE.shiftLeft(1100);
+        var shortResidual = BigInteger.ONE.shiftLeft(1050);
+        check(Double.isNaN(longResidual.doubleValue() / huge.doubleValue()) &&
+                Double.isNaN(shortResidual.doubleValue() / huge.doubleValue()),
+                "Control did not reproduce the Infinity/Infinity ordering defect");
+        check(Double.isNaN(legacyWeight(new BigInteger[]{longResidual, longResidual}, new BigInteger[]{huge, huge})) &&
+                Double.isNaN(legacyWeight(new BigInteger[]{shortResidual, shortResidual}, new BigInteger[]{huge, huge})),
+                "Legacy double weight was not degraded to NaN on this input");
+        // Rows are walked in ascending order on both sides (columns are built in
+        // ascending row order), so the merge charges each shared row once.
+        var worse = profile(new int[]{0, 1}, new BigInteger[]{longResidual, longResidual}, new BigInteger[]{huge, huge});
+        var better = profile(new int[]{0, 1}, new BigInteger[]{shortResidual, shortResidual}, new BigInteger[]{huge, huge});
+        check(CountDemandProjection.compareResidualSums(worse, better) > 0, "Tied giant residuals were not ordered by exact weight");
+        check(CountDemandProjection.compareResidualSums(better, worse) < 0, "Exact residual ordering was not antisymmetric");
+        // Genuinely equal residuals stay a tie, so the run-count tie-break still decides.
+        var same = profile(new int[]{0, 1}, new BigInteger[]{shortResidual, shortResidual}, new BigInteger[]{huge, huge});
+        check(CountDemandProjection.compareResidualSums(same, better) == 0, "Equal residuals were reported as an ordering");
+        // A zero hinge on one side must not cost the shared row on the other.
+        var partial = profile(new int[]{1}, new BigInteger[]{shortResidual}, new BigInteger[]{huge});
+        check(CountDemandProjection.compareResidualSums(partial, better) < 0, "Missing row was charged as an improvement");
+        check(CountDemandProjection.compareResidualSums(better, partial) > 0, "Missing row broke antisymmetry");
+        // Small residues keep their plain order: the cheap path may not invert them.
+        var one = profile(new int[]{0}, new BigInteger[]{BigInteger.valueOf(4)}, new BigInteger[]{BigInteger.ONE});
+        var two = profile(new int[]{0}, new BigInteger[]{BigInteger.valueOf(9)}, new BigInteger[]{BigInteger.ONE});
+        check(CountDemandProjection.compareResidualSums(one, two) < 0, "Ordinary residuals lost their ordering");
+        // Both comparisons used to be false at once: whichever candidate was
+        // visited first won, so the same model could repair along two paths.
+        double worseWeight = legacyWeight(new BigInteger[]{longResidual, longResidual}, new BigInteger[]{huge, huge});
+        double betterWeight = legacyWeight(new BigInteger[]{shortResidual, shortResidual}, new BigInteger[]{huge, huge});
+        check(!legacyBetter(1, betterWeight, BigInteger.ONE, 1, worseWeight, BigInteger.ONE)
+                && !legacyBetter(1, worseWeight, BigInteger.ONE, 1, betterWeight, BigInteger.ONE),
+                "Legacy tie-break was not order dependent on this input");
+        check(CountDemandProjection.compareResidualSums(better, worse) < 0
+                && CountDemandProjection.compareResidualSums(worse, better) > 0,
+                "Exact residual ordering did not restore a definite direction");
+    }
+
+    private static double legacyWeight(BigInteger[] after, BigInteger[] gain) {
+        double weight = 0;
+        for (int i = 0; i < after.length; i++) weight += after[i].doubleValue() / gain[i].doubleValue();
+        return weight;
+    }
+
+    /** The pre-change tie-break, verbatim: fewer violations, then weight, then runs. */
+    private static boolean legacyBetter(int negative, double weight, BigInteger runs,
+                                        int bestNegative, double bestWeight, BigInteger bestRuns) {
+        return negative < bestNegative || negative == bestNegative
+                && (weight < bestWeight || weight == bestWeight && (bestRuns == null || runs.compareTo(bestRuns) < 0));
+    }
+
+    private static CountDemandProjection.ResidualProfile profile(int[] rows, BigInteger[] hinges, BigInteger[] gains) {
+        return new CountDemandProjection.ResidualProfile(rows, hinges, gains);
     }
 
     private static ArrayList<ExactLinearProgram.Constraint> pivotRows(int copies, int amount) {
