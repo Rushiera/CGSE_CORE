@@ -48,6 +48,7 @@ final class CountSeparator implements CountContinuation {
     private long allowance;
     private int cursor, maxSeparator;
     private boolean prepared, complete, infeasible;
+    private String refusal = "";
     private CountInterfaceSearch interfaceSearch;
 
     CountSeparator(List<ExactLinearProgram.Constraint> rows, BigInteger[] lower, BigInteger[] upper, PlanningBudget budget) {
@@ -62,8 +63,12 @@ final class CountSeparator implements CountContinuation {
         allowance = Math.min(maxWork, budget.remainingWork() / 16);
         long terms = rows.stream().mapToLong(row -> row.terms().size()).sum();
         long bytes = 2048 + 384L * lower.length + 192L * terms + 128L * rows.size() + 8L * lower.length * lower.length;
-        if (lower.length > 256 || rows.size() > 2048 || allowance < 1024 || !budget.tryReserve(bytes)) complete = true;
-        else memory = bytes;
+        String axes = (lower.length > 256 ? "size:variables>256 " : "") + (rows.size() > 2048 ? "size:rows>2048 " : "") + (allowance < 1024 ? "quota:allowance<1024" : "");
+        if (!axes.isEmpty() || !budget.tryReserve(bytes)) {
+            refusal = axes.isEmpty() ? "memory:tryReserve" : axes.trim();
+            budget.note("admission_refused", "owner=CountSeparator " + refusal);
+            complete = true;
+        } else memory = bytes;
     }
 
     public boolean step() {
@@ -364,6 +369,7 @@ final class CountSeparator implements CountContinuation {
     public boolean paused() { return paused; }
     public long work() { return work; }
     public long progress() { return completedTuples; }
+    @Override public String refusal() { return refusal; }
     public boolean matches(List<ExactLinearProgram.Constraint> rows, BigInteger[] low, BigInteger[] high) {
         return original.equals(rows) && Arrays.equals(lower, low) && Arrays.equals(upper, high);
     }
